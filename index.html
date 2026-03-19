@@ -1049,6 +1049,7 @@ function confirmOrder(){
   var sucMsg = get('sucMsg');
 
   var orderData = {
+    action:   'saveOrder',
     order_id: orderId,
     date:     new Date().toLocaleString('en-IN'),
     name:     fn,
@@ -1060,13 +1061,19 @@ function confirmOrder(){
     pin:      val('oPin'),
     items:    items.join(', '),
     total:    'Rs.' + total.toLocaleString('en-IN'),
-    payment:  payLabel
+    payment:  payLabel,
+    reduce_stock: {
+      base: 1,
+      bag:  OR.bag ? 1 : 0,
+      med:  OR.med ? 1 : 0,
+      full: (OR.bag && OR.med) ? 1 : 0
+    }
   };
 
   // Show saving status
   if(ea) ea.innerHTML = '<div style="margin-top:12px;font-size:13px;color:rgba(255,255,255,.5);">&#128336; Saving your order...</div>';
 
-  fetch('https://script.google.com/macros/s/AKfycbxAmuPb3fp1j8jcWXdrR7oA2_d-7sycTYIBID4Vx8AgK-cwTeeCmvV6lXIsdrbCTg/exec', {
+  fetch('https://script.google.com/macros/s/AKfycbwmzWg7OJL6ffR7zFwJJ-nKvnHU-Nz-_U8LoLM5GlknXiRJ9Nud9fUL9KOvEZz0LdQ/exec', {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'application/json' },
@@ -1179,7 +1186,12 @@ get('saveStockBtn').addEventListener('click',function(){
   ['base','bag','med','full'].forEach(function(id){var e=get('si'+id);if(e)D.stock[id]=parseInt(e.value)||0;});
   D.stock.updatedAt=new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
   persist('stock'); renderStock(); refreshOrderBtns();
-  T('stockUpdLbl','Last saved: '+D.stock.updatedAt); showOk('stockOk');
+  T('stockUpdLbl','Saving to Google Sheets...');
+  // Save to Google Sheets so all browsers see updated stock
+  saveStockToSheets({base:D.stock.base, bag:D.stock.bag, med:D.stock.med, full:D.stock.full}, function(){
+    T('stockUpdLbl','Last saved: '+D.stock.updatedAt+' (synced to Google Sheets)');
+    showOk('stockOk');
+  });
 });
 get('savePricingBtn').addEventListener('click',function(){
   D.prices.base=parseInt(get('piBase').value)||1999;
@@ -1237,7 +1249,36 @@ get('savePassBtn').addEventListener('click',function(){
 // ============================================================
 // INIT
 // ============================================================
+
+// Load stock from Google Sheets on every page load
+function loadStockFromSheets(){
+  fetch('https://script.google.com/macros/s/AKfycbwmzWg7OJL6ffR7zFwJJ-nKvnHU-Nz-_U8LoLM5GlknXiRJ9Nud9fUL9KOvEZz0LdQ/exec?action=getStock')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data.status === 'success'){
+        D.stock.base = data.stock.base !== undefined ? Number(data.stock.base) : D.stock.base;
+        D.stock.bag  = data.stock.bag  !== undefined ? Number(data.stock.bag)  : D.stock.bag;
+        D.stock.med  = data.stock.med  !== undefined ? Number(data.stock.med)  : D.stock.med;
+        D.stock.full = data.stock.full !== undefined ? Number(data.stock.full) : D.stock.full;
+        renderStock();
+        refreshOrderBtns();
+      }
+    })
+    .catch(function(e){ console.log('Stock load failed, using defaults'); });
+}
+
+// Save stock to Google Sheets (called from editor)
+function saveStockToSheets(stockObj, callback){
+  fetch('https://script.google.com/macros/s/AKfycbwmzWg7OJL6ffR7zFwJJ-nKvnHU-Nz-_U8LoLM5GlknXiRJ9Nud9fUL9KOvEZz0LdQ/exec', {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action:'updateStock', stock:stockObj})
+  }).then(function(){ if(callback) callback(); }).catch(function(){ if(callback) callback(); });
+}
+
 renderAll();
+loadStockFromSheets();
 </script>
 </body>
 </html>
